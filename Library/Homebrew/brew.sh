@@ -127,12 +127,6 @@ case "$1" in
     homebrew-shellenv "$1"
     exit 0
     ;;
-  setup-ruby)
-    source "${HOMEBREW_LIBRARY}/Homebrew/cmd/setup-ruby.sh"
-    shift
-    homebrew-setup-ruby "$1"
-    exit 0
-    ;;
 esac
 
 source "${HOMEBREW_LIBRARY}/Homebrew/help.sh"
@@ -172,22 +166,75 @@ case "$@" in
     source "${HOMEBREW_LIBRARY}/Homebrew/list.sh"
     homebrew-list "$@" && exit 0
     ;;
+  # homebrew-tap only handles invocations with no arguments
+  tap)
+    source "${HOMEBREW_LIBRARY}/Homebrew/tap.sh"
+    homebrew-tap "$@"
+    exit 0
+    ;;
   # falls back to cmd/help.rb on a non-zero return
   help | --help | -h | --usage | "-?" | "")
     homebrew-help "$@" && exit 0
     ;;
 esac
 
-#####
-##### Next, define all helper functions.
-#####
+# Include some helper functions.
 source "${HOMEBREW_LIBRARY}/Homebrew/utils/helpers.sh"
+
+# Require HOMEBREW_BREW_WRAPPER to be set if HOMEBREW_FORCE_BREW_WRAPPER is set
+# (and HOMEBREW_NO_FORCE_BREW_WRAPPER is not set) for all non-trivial commands
+# (i.e. not defined above this line e.g. formulae or --cellar).
+if [[ -z "${HOMEBREW_NO_FORCE_BREW_WRAPPER:-}" && -n "${HOMEBREW_FORCE_BREW_WRAPPER:-}" ]]
+then
+  if [[ -z "${HOMEBREW_BREW_WRAPPER:-}" ]]
+  then
+    odie <<EOS
+HOMEBREW_FORCE_BREW_WRAPPER was set to
+  ${HOMEBREW_FORCE_BREW_WRAPPER}
+but HOMEBREW_BREW_WRAPPER was unset. This indicates that you are running
+  ${HOMEBREW_BREW_FILE}
+directly but should instead run
+  ${HOMEBREW_FORCE_BREW_WRAPPER}
+EOS
+  elif [[ "${HOMEBREW_FORCE_BREW_WRAPPER}" != "${HOMEBREW_BREW_WRAPPER}" ]]
+  then
+    odie <<EOS
+HOMEBREW_FORCE_BREW_WRAPPER was set to
+  ${HOMEBREW_FORCE_BREW_WRAPPER}
+but HOMEBREW_BREW_WRAPPER was set to
+  ${HOMEBREW_BREW_WRAPPER}
+This indicates that you are running
+  ${HOMEBREW_BREW_FILE}
+directly but should instead run:
+  ${HOMEBREW_FORCE_BREW_WRAPPER}
+EOS
+  fi
+fi
+
+# commands that take a single or no arguments and need to write to HOMEBREW_PREFIX.
+# HOMEBREW_LIBRARY set by bin/brew
+# shellcheck disable=SC2154
+# doesn't need a default case as other arguments handled elsewhere.
+# shellcheck disable=SC2249
+case "$1" in
+  setup-ruby)
+    source "${HOMEBREW_LIBRARY}/Homebrew/cmd/setup-ruby.sh"
+    shift
+    homebrew-setup-ruby "$1"
+    exit 0
+    ;;
+esac
+
+#####
+##### Next, define all other helper functions.
+#####
 
 check-run-command-as-root() {
   [[ "${EUID}" == 0 || "${UID}" == 0 ]] || return
 
-  # Allow Azure Pipelines/GitHub Actions/Docker/Concourse/Kubernetes to do everything as root (as it's normal there)
+  # Allow Azure Pipelines/GitHub Actions/Docker/Podman/Concourse/Kubernetes to do everything as root (as it's normal there)
   [[ -f /.dockerenv ]] && return
+  [[ -f /run/.containerenv ]] && return
   [[ -f /proc/1/cgroup ]] && grep -E "azpl_job|actions_job|docker|garden|kubepods" -q /proc/1/cgroup && return
 
   # Homebrew Services may need `sudo` for system-wide daemons.
@@ -439,13 +486,13 @@ GIT_REVISION=$("${HOMEBREW_GIT}" -C "${HOMEBREW_REPOSITORY}" rev-parse HEAD 2>/d
 # safe fallback in case git rev-parse fails e.g. if this is not considered a safe git directory
 if [[ -z "${GIT_REVISION}" ]]
 then
-  read -r GIT_HEAD <"${HOMEBREW_REPOSITORY}/.git/HEAD" 2>/dev/null
+  read -r GIT_HEAD 2>/dev/null <"${HOMEBREW_REPOSITORY}/.git/HEAD"
   if [[ "${GIT_HEAD}" == "ref: refs/heads/master" ]]
   then
-    read -r GIT_REVISION <"${HOMEBREW_REPOSITORY}/.git/refs/heads/master" 2>/dev/null
+    read -r GIT_REVISION 2>/dev/null <"${HOMEBREW_REPOSITORY}/.git/refs/heads/master"
   elif [[ "${GIT_HEAD}" == "ref: refs/heads/stable" ]]
   then
-    read -r GIT_REVISION <"${HOMEBREW_REPOSITORY}/.git/refs/heads/stable" 2>/dev/null
+    read -r GIT_REVISION 2>/dev/null <"${HOMEBREW_REPOSITORY}/.git/refs/heads/stable"
   fi
   unset GIT_HEAD
 fi
@@ -514,6 +561,7 @@ esac
 # TODO: bump version when new macOS is released or announced and update references in:
 # - docs/Installation.md
 # - https://github.com/Homebrew/install/blob/HEAD/install.sh
+# - Library/Homebrew/os/mac.rb (latest_sdk_version)
 # and, if needed:
 # - MacOSVersion::SYMBOLS
 HOMEBREW_MACOS_NEWEST_UNSUPPORTED="16"

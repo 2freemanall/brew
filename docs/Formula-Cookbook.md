@@ -334,6 +334,14 @@ test do
 end
 ```
 
+* If the binary only writes to `stderr`, you can redirect `stderr` to `stdout` for assertions with `shell_output`. For example:
+
+```ruby
+test do
+  assert_match "Output on stderr", shell_output("#{bin}/formula-program 2>&1", 2)
+end
+```
+
 ### Manuals
 
 Homebrew expects to find manual pages in `#{prefix}/share/man/...`, and not in `#{prefix}/man/...`.
@@ -640,6 +648,8 @@ patch :p0, "..."
 ```
 
 In embedded patches, the string "HOMEBREW\_PREFIX" is replaced with the value of the constant `HOMEBREW_PREFIX` before the patch is applied.
+
+In external patches, the string "@@HOMEBREW\_PREFIX@@" is replaced with the value of the constant `HOMEBREW_PREFIX` before the patch is applied.
 
 ### Creating the diff
 
